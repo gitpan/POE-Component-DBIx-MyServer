@@ -1,0 +1,308 @@
+package POE::Component::DBIx::MyServer;
+
+use strict qw(subs vars refs);
+use warnings FATAL => 'all';
+
+our $VERSION = "0.01_01";
+
+use POE;
+use POE::Kernel;
+use POE qw(Component::Server::TCP);
+use POE::Component::DBIx::MyServer::Client;
+use POE::Filter::Block;
+use Socket qw(INADDR_ANY inet_ntoa inet_aton AF_INET AF_UNIX PF_UNIX);
+use Errno qw(ECONNABORTED ECONNRESET);
+use Carp qw( croak );
+use Class::Inspector;
+use Module::Find;
+use Data::Dumper;
+
+sub DEBUG {1}
+BEGIN {
+	if ( ! defined &DEBUG ) {
+		eval "sub DEBUG () { 0 }";
+	}
+}
+
+my $server_class;
+
+sub spawn {
+	my ($class, %opt) = @_;
+	$server_class = $class;
+	my ( $alias, $address, $port, $hostname, $got_query );
+	
+	# Get the session alias
+	if ( exists $opt{'alias'} and defined $opt{'alias'} and length( $opt{'alias'} ) ) {
+		$alias = $opt{'alias'};
+		delete $opt{'alias'};
+	}
+
+	# Get the PORT
+	if ( exists $opt{'port'} and defined $opt{'port'} and length( $opt{'port'} ) ) {
+		$port = $opt{'port'};
+		delete $opt{'port'};
+	} else {
+		croak( 'port is required to create a new POE::Component::Server::SimpleHTTP instance!' );
+	}
+
+	# Get the HOSTNAME
+	if ( exists $opt{'hostname'} and defined $opt{'hostname'} and length( $opt{'hostname'} ) ) {
+		$hostname = $opt{'hostname'};
+		delete $opt{'hostname'};
+	} else {
+		if ( DEBUG ) {
+			print 'Using Sys::Hostname for hostname';
+		}
+
+		# Figure out the hostname
+		require Sys::Hostname;
+		$hostname = Sys::Hostname::hostname();
+
+		# Get rid of any lingering HOSTNAME
+		if ( exists $opt{'hostname'} ) {
+			delete $opt{'hostname'};
+		}
+	}
+
+    my $data = { 
+        'alias'		   =>	$alias,
+        'address'	   =>	$address,
+        'port'		   =>	$port,
+        'hostname'	   =>	$hostname,
+        'query_handlers' => $opt{'query_handlers'},
+    };
+    my $self = bless $data, $class;
+    
+    print $alias."\n";
+    
+    my $acceptor_session_id = POE::Component::Server::TCP->new(
+        Port          => $port,
+        Address       => $address,
+        Hostname      => $hostname,
+        Domain        => AF_INET,
+        Alias         => $alias,
+        Started       => \&_server_start,
+        Acceptor      => \&_accept_client,
+        SessionParams => [ heap => { query_handlers => $opt{'query_handlers'}  } ],
+    );
+
+	return $self;
+}
+
+
+sub _accept_client {
+    my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
+    my ($socket, $remote_addr, $remote_port) = @_[ARG0, ARG1, ARG2];
+
+    my $domain  = AF_INET;
+    my $query_handlers = $heap->{'query_handlers'};
+   
+    my $client = POE::Component::DBIx::MyServer::Client->new({
+        server_class    => $server_class
+    });
+
+    my $accept_session_id = POE::Session->create(
+        inline_states => {
+            _start => sub {
+                my ( $kernel, $session, $heap ) = @_[KERNEL, SESSION, HEAP];
+                
+                $heap->{shutdown} = 0;
+                
+                if (length($remote_addr) == 4) {
+                    $heap->{remote_ip} = inet_ntoa($remote_addr);
+                }
+                else {
+                    $heap->{remote_ip} =
+                    Socket6::inet_ntop($domain, $remote_addr);
+                }
+                
+                $heap->{remote_port} = $remote_port;
+                
+                $heap->{client} = POE::Wheel::ReadWrite->new(
+                    Handle       => $socket,
+                    Driver       => POE::Driver::SysRW->new(),
+                    Filter       => POE::Filter::Block->new( 
+                        LengthCodec => [ \&_length_encoder, \&_length_decoder ]
+                    ),
+                    InputEvent   => 'tcp_server_got_input',
+                    ErrorEvent   => 'tcp_server_got_error',
+                );
+                $client->wheel($heap->{client});
+                $client->session_id($session->ID);
+                $client->session($session);
+
+#                # register query handlers
+#                foreach my $query_handler (keys %{ $query_handlers }) {
+#                    if (ref($query_handlers->{$query_handler}) eq 'CODE') {
+#                        #print "CAN I register a CODEREF event register $query_handler to method ".$query_handlers->{$query_handler}." \n";
+##                        print "register $query_handler to method ".$query_handlers->{$query_handler}." \n";
+#                        $session->_register_state($query_handler, $client, $query_handler);
+#                    }
+#                    else {
+##                        print "register $query_handler to method ".$query_handlers->{$query_handler}." \n";
+#                        $session->_register_state($query_handlers->{$query_handler}, $client, $query_handler);
+#                        $query_handlers->{ $query_handlers->{$query_handler} } = $query_handler;
+#                        delete $query_handlers->{$query_handler};
+#                    }
+#                    $heap->{'query_handlers'} = $query_handlers;
+#                }
+                
+                
+                # WE NEED TO REGISTER DATABASE STATES
+                # WHEN THE DATABASE HAS BEEN SELECTED 
+                
+                #print "finding modules in $server_class namespace \n";
+                #
+                #my @found = useall $server_class;
+                #
+                #foreach my $database_class (@found) {
+                #    print "registering events for class $database_class \n";
+                #    my @methods = Class::Inspector->methods( $database_class, 'expanded', 'public');
+                #    
+                #    # register system states             
+                #    foreach my $method (@{ $methods[0] }) {
+                #        my ($full, $class, $method, undef ) = @{ $method };
+                #        #my ($full, $class, $method, undef ) = @{ $method };
+                #        if ($class eq $database_class) {
+                #        #    # too much stuff is registered here !!!
+                #        #    # need to mark private some stuff ...
+                #            print "register ".$method."\n"; 
+                #            $session->_register_state($method, $client);
+                #        }
+                #    }                    
+                #}                
+                
+                # register system states    
+                my @methods = Class::Inspector->methods(
+                    'POE::Component::DBIx::MyServer::Client',
+                    'expanded',
+                    'public'
+                );
+                
+                foreach my $method (@{ $methods[0] }) {
+                    my ($full, $class, $method, undef ) = @{ $method };
+                    next if $method =~ /^send_/
+                            or $method eq 'write'
+                            or $method eq 'new_definition';
+                    if ($class eq 'POE::Component::DBIx::MyServer::Client') {
+                        # too much stuff is registered here !!!
+                        # need to mark private some stuff ...
+#                        print "register ".$method."\n"; 
+                        $session->_register_state($method, $client);
+                    }
+                }
+                    
+                $client->handle_client_connect(@_);
+            },
+            _child  => sub { },
+
+            tcp_server_got_input => sub {
+              return if $_[HEAP]->{shutdown};
+              $_[KERNEL]->yield('handle_client_input', $_[ARG0]);
+              undef;
+            },
+            tcp_server_got_error => sub {
+              DEBUG and warn(
+                "$$:  child Error ARG0=$_[ARG0] ARG1=$_[ARG1]"
+              );
+              unless ($_[ARG0] eq 'accept' and $_[ARG1] == ECONNABORTED) {
+                $client->handle_client_error(@_);
+                if ($_[HEAP]->{shutdown_on_error}) {
+                  $_[HEAP]->{got_an_error} = 1;
+                  $_[KERNEL]->yield("shutdown");
+                }
+              }
+            },
+    
+            shutdown => sub {
+              DEBUG and warn "$$:  child Shutdown";
+              my $heap = $_[HEAP];
+              $heap->{shutdown} = 1;
+              if (defined $heap->{client}) {
+                if (
+                  $heap->{got_an_error} or
+                  not $heap->{client}->get_driver_out_octets()
+                ) {
+                  DEBUG and warn "$$:  child Shutdown, callback";
+                  $client->handle_client_disconnect(@_);
+                  delete $heap->{client};
+                }
+              }
+            },
+#        _stop => sub {
+#          ## concurrency on close
+#          DEBUG and warn(
+#            "$$:  _stop accept_session = $accept_session_id"
+#          );
+#          if( defined $accept_session_id ) {
+#            $_[KERNEL]->call( $accept_session_id, 'disconnected' );
+#          }
+#          else {
+#            # This means that the Server::TCP was shutdown before
+#            # this connection closed.  So it doesn't really matter that
+#            # we can't decrement the connection counter.
+#            DEBUG and warn(
+#              "$$: $_[HEAP]->{alias} Disconnected from a connection ",
+#              "without POE::Component::Server::TCP parent"
+#            );
+#          }
+#          return;
+#        },
+        },
+    );
+}
+
+
+sub _server_start {
+   my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
+   
+   print "Start server \n";
+}
+
+sub _length_encoder {
+    return;
+}
+
+sub _length_decoder {
+   my $stuff = shift;
+
+   if (length($$stuff) > 1) {
+      return length($$stuff);
+   }
+   else {
+      return 1;
+   }
+}
+
+sub handle_client_disconnect {
+   my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
+   
+   print "handle_client_disconnect"."\n" if DEBUG;
+}
+
+=head1 NAME
+
+POE::Component::DBIx::MyServer - A pseudo mysql POE server
+
+=head1 DESCRIPTION
+
+This modules helps building a server that can communicates 
+with mysql clients.
+
+Experimental now.
+
+=head1 AUTHORS
+
+Eriam Schaffter, C<eriam@cpan.org> and the work done by Philipp Stoev.
+
+=head1 COPYRIGHT
+
+This program is free software, you can redistribute it and/or modify it 
+under the same terms as Perl itself.
+
+=cut
+
+1;
+
+
+
