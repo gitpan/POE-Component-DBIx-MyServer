@@ -3,7 +3,7 @@ package POE::Component::DBIx::MyServer;
 use strict qw(subs vars refs);
 use warnings FATAL => 'all';
 
-our $VERSION = "0.01_01";
+our $VERSION = "0.01_02";
 
 use POE;
 use POE::Kernel;
@@ -293,7 +293,7 @@ Experimental now.
 
 =head1 AUTHORS
 
-Eriam Schaffter, C<eriam@cpan.org> and the work done by Philipp Stoev.
+Eriam Schaffter, C<eriam@cpan.org> and original work done by Philip Stoev in the DBIx::MyServer module.
 
 =head1 COPYRIGHT
 

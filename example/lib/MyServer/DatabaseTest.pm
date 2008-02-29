@@ -10,6 +10,8 @@ sub resolve_query {
 
     my $sys_query = $self->resolve_sys_query($query);
 
+    print "resolver OK \n";
+
     return $sys_query if defined $sys_query;
 
     if ($query eq 'select a_dummy_query') {

@@ -10,7 +10,10 @@ sub change_db {
 
     $client->isa('MyServer::DatabaseTest');
 
-}
 
+    print "ISA ".ref($client)." \n";
+
+
+}
 
 1;
