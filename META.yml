@@ -1,11 +1,11 @@
 --- #YAML:1.0
 name:                POE-Component-DBIx-MyServer
-version:             0.01_02
+version:             0.01_03
 abstract:            A pseudo mysql POE server
 license:             perl
 author:              
     - Eriam Schaffter <eriam@cpan.org>
-generated_by:        ExtUtils::MakeMaker version 6.42
+generated_by:        ExtUtils::MakeMaker version 6.44
 distribution_type:   module
 requires:     
     Catalyst:                      0

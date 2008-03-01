@@ -8,10 +8,18 @@ sub change_db {
     my $class = shift;
     my ($client, $data) = @_;
 
-    $client->isa('MyServer::DatabaseTest');
+    if (Class::Inspector->installed($class."::".$data)) {
+        print "I can load that DB \n";
 
+        $client->isa($class."::".$data);
 
-    print "ISA ".ref($client)." \n";
+        print "ISA ".$class." :: ".$data." \n";
+
+    }
+    else {
+        print "I can't load the DB class ".$class."::".$data." doh \n";
+    }
+
 
 
 }

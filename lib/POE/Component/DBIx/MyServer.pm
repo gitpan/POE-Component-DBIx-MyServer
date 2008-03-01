@@ -3,7 +3,7 @@ package POE::Component::DBIx::MyServer;
 use strict qw(subs vars refs);
 use warnings FATAL => 'all';
 
-our $VERSION = "0.01_02";
+our $VERSION = "0.01_03";
 
 use POE;
 use POE::Kernel;
@@ -290,6 +290,9 @@ This modules helps building a server that can communicates
 with mysql clients.
 
 Experimental now.
+
+There is a small proxy that actually connect to another mysql server
+via DBI and returns the result of sql requests.
 
 =head1 AUTHORS
 

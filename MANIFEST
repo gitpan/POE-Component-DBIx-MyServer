@@ -1,8 +1,10 @@
 example/lib/MyServer.pm
 example/lib/MyServer/DatabaseTest.pm
+example/lib/MyServer/Google.pm
+example/lib/MyServer/Proxy.pm
 example/server.pl
 lib/POE/Component/DBIx/MyServer.pm
 lib/POE/Component/DBIx/MyServer/Client.pm
 Makefile.PL
 MANIFEST			This list of files
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml
