@@ -3,7 +3,7 @@ package POE::Component::DBIx::MyServer;
 use strict qw(subs vars refs);
 use warnings FATAL => 'all';
 
-our $VERSION = "0.01_03";
+our $VERSION = "0.01_04";
 
 use POE;
 use POE::Kernel;

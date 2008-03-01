@@ -1,5 +1,6 @@
 example/lib/MyServer.pm
 example/lib/MyServer/DatabaseTest.pm
+example/lib/MyServer/Finance.pm
 example/lib/MyServer/Google.pm
 example/lib/MyServer/Proxy.pm
 example/server.pl

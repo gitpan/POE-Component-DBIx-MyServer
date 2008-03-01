@@ -21,9 +21,8 @@ sub proxy_query {
 
     $self->_connect unless defined $DBH;
 
-    print 'a_dummy_query '.$data."\n";
-   
     my $results;
+
     eval {
         $results = $DBH->selectall_arrayref($data);
 
