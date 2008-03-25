@@ -21,7 +21,7 @@ sub finance_query {
     my $data = $_[ARG0];
 
     print 'a_dummy_query '.$data."\n";
-   	
+#   	
 
    my $q = Finance::Quote->new;
 

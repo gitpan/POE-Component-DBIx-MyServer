@@ -9,18 +9,11 @@ sub change_db {
     my ($client, $data) = @_;
 
     if (Class::Inspector->installed($class."::".$data)) {
-        print "I can load that DB \n";
-
         $client->isa($class."::".$data);
-
-        print "ISA ".$class." :: ".$data." \n";
-
     }
     else {
         print "I can't load the DB class ".$class."::".$data." doh \n";
     }
-
-
 
 }
 

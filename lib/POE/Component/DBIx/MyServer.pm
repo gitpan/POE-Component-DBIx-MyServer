@@ -3,7 +3,7 @@ package POE::Component::DBIx::MyServer;
 use strict qw(subs vars refs);
 use warnings FATAL => 'all';
 
-our $VERSION = "0.01_04";
+our $VERSION = "0.01_05";
 
 use POE;
 use POE::Kernel;
@@ -17,7 +17,6 @@ use Class::Inspector;
 use Module::Find;
 use Data::Dumper;
 
-sub DEBUG {1}
 BEGIN {
 	if ( ! defined &DEBUG ) {
 		eval "sub DEBUG () { 0 }";
@@ -30,7 +29,7 @@ sub spawn {
 	my ($class, %opt) = @_;
 	$server_class = $class;
 	my ( $alias, $address, $port, $hostname, $got_query );
-	
+
 	# Get the session alias
 	if ( exists $opt{'alias'} and defined $opt{'alias'} and length( $opt{'alias'} ) ) {
 		$alias = $opt{'alias'};
@@ -41,7 +40,8 @@ sub spawn {
 	if ( exists $opt{'port'} and defined $opt{'port'} and length( $opt{'port'} ) ) {
 		$port = $opt{'port'};
 		delete $opt{'port'};
-	} else {
+	}
+    else {
 		croak( 'port is required to create a new POE::Component::Server::SimpleHTTP instance!' );
 	}
 
@@ -64,7 +64,7 @@ sub spawn {
 		}
 	}
 
-    my $data = { 
+    my $data = {
         'alias'		   =>	$alias,
         'address'	   =>	$address,
         'port'		   =>	$port,
@@ -72,9 +72,9 @@ sub spawn {
         'query_handlers' => $opt{'query_handlers'},
     };
     my $self = bless $data, $class;
-    
-    print $alias."\n";
-    
+
+#    print $alias."\n";
+
     my $acceptor_session_id = POE::Component::Server::TCP->new(
         Port          => $port,
         Address       => $address,
@@ -96,7 +96,7 @@ sub _accept_client {
 
     my $domain  = AF_INET;
     my $query_handlers = $heap->{'query_handlers'};
-   
+
     my $client = POE::Component::DBIx::MyServer::Client->new({
         server_class    => $server_class
     });
@@ -105,9 +105,9 @@ sub _accept_client {
         inline_states => {
             _start => sub {
                 my ( $kernel, $session, $heap ) = @_[KERNEL, SESSION, HEAP];
-                
+
                 $heap->{shutdown} = 0;
-                
+
                 if (length($remote_addr) == 4) {
                     $heap->{remote_ip} = inet_ntoa($remote_addr);
                 }
@@ -115,13 +115,13 @@ sub _accept_client {
                     $heap->{remote_ip} =
                     Socket6::inet_ntop($domain, $remote_addr);
                 }
-                
+
                 $heap->{remote_port} = $remote_port;
-                
+
                 $heap->{client} = POE::Wheel::ReadWrite->new(
                     Handle       => $socket,
                     Driver       => POE::Driver::SysRW->new(),
-                    Filter       => POE::Filter::Block->new( 
+                    Filter       => POE::Filter::Block->new(
                         LengthCodec => [ \&_length_encoder, \&_length_decoder ]
                     ),
                     InputEvent   => 'tcp_server_got_input',
@@ -131,54 +131,13 @@ sub _accept_client {
                 $client->session_id($session->ID);
                 $client->session($session);
 
-#                # register query handlers
-#                foreach my $query_handler (keys %{ $query_handlers }) {
-#                    if (ref($query_handlers->{$query_handler}) eq 'CODE') {
-#                        #print "CAN I register a CODEREF event register $query_handler to method ".$query_handlers->{$query_handler}." \n";
-##                        print "register $query_handler to method ".$query_handlers->{$query_handler}." \n";
-#                        $session->_register_state($query_handler, $client, $query_handler);
-#                    }
-#                    else {
-##                        print "register $query_handler to method ".$query_handlers->{$query_handler}." \n";
-#                        $session->_register_state($query_handlers->{$query_handler}, $client, $query_handler);
-#                        $query_handlers->{ $query_handlers->{$query_handler} } = $query_handler;
-#                        delete $query_handlers->{$query_handler};
-#                    }
-#                    $heap->{'query_handlers'} = $query_handlers;
-#                }
-                
-                
-                # WE NEED TO REGISTER DATABASE STATES
-                # WHEN THE DATABASE HAS BEEN SELECTED 
-                
-                #print "finding modules in $server_class namespace \n";
-                #
-                #my @found = useall $server_class;
-                #
-                #foreach my $database_class (@found) {
-                #    print "registering events for class $database_class \n";
-                #    my @methods = Class::Inspector->methods( $database_class, 'expanded', 'public');
-                #    
-                #    # register system states             
-                #    foreach my $method (@{ $methods[0] }) {
-                #        my ($full, $class, $method, undef ) = @{ $method };
-                #        #my ($full, $class, $method, undef ) = @{ $method };
-                #        if ($class eq $database_class) {
-                #        #    # too much stuff is registered here !!!
-                #        #    # need to mark private some stuff ...
-                #            print "register ".$method."\n"; 
-                #            $session->_register_state($method, $client);
-                #        }
-                #    }                    
-                #}                
-                
-                # register system states    
+                # register system states
                 my @methods = Class::Inspector->methods(
                     'POE::Component::DBIx::MyServer::Client',
                     'expanded',
                     'public'
                 );
-                
+
                 foreach my $method (@{ $methods[0] }) {
                     my ($full, $class, $method, undef ) = @{ $method };
                     next if $method =~ /^send_/
@@ -187,11 +146,10 @@ sub _accept_client {
                     if ($class eq 'POE::Component::DBIx::MyServer::Client') {
                         # too much stuff is registered here !!!
                         # need to mark private some stuff ...
-#                        print "register ".$method."\n"; 
                         $session->_register_state($method, $client);
                     }
                 }
-                    
+
                 $client->handle_client_connect(@_);
             },
             _child  => sub { },
@@ -213,7 +171,7 @@ sub _accept_client {
                 }
               }
             },
-    
+
             shutdown => sub {
               DEBUG and warn "$$:  child Shutdown";
               my $heap = $_[HEAP];
@@ -255,7 +213,7 @@ sub _accept_client {
 
 sub _server_start {
    my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
-   
+
    print "Start server \n";
 }
 
@@ -276,7 +234,7 @@ sub _length_decoder {
 
 sub handle_client_disconnect {
    my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
-   
+
    print "handle_client_disconnect"."\n" if DEBUG;
 }
 
@@ -286,13 +244,77 @@ POE::Component::DBIx::MyServer - A pseudo mysql POE server
 
 =head1 DESCRIPTION
 
-This modules helps building a server that can communicates 
+This modules helps building a server that can communicates
 with mysql clients.
 
 Experimental now.
 
 There is a small proxy that actually connect to another mysql server
-via DBI and returns the result of sql requests.
+via DBI and returns the result of sql requests. It actually works
+not very correctly since a few mysql specific stuff are not handled
+properly and since it return stuff from selects.
+
+=head1 SYNOPSYS
+
+First you create a server subclass that will redefine the change_db method.
+
+    package MyServer;
+
+    use POE;
+    use base 'POE::Component::DBIx::MyServer';
+
+    sub change_db {
+        my $class = shift;
+        my ($client, $data) = @_;
+
+        if (Class::Inspector->installed($class."::".$data)) {
+            $client->isa($class."::".$data);
+        }
+    }
+
+In the example the MyServer shipped uses various perl classes as DB handlers.
+Maybe it's possible to deal with it differently and change_db in some other way.
+
+Then you can create various classes (that subclass the PoCo::DBIx::MyServer::Client
+class) that will behave as databases in your mysql server.
+
+    package MyServer::HelloWorld;
+
+    use POE;
+
+    sub resolve_query {
+        my ($self, $query) = @_;
+        my $event = $self->resolve_sys_query($query);
+
+        if ($event) {
+            return $event;
+        }
+        else {
+            return 'hello_world_event';
+        }
+    }
+
+    sub hello_world_event {
+        my ( $kernel, $session, $heap, $self ) = @_[ KERNEL, SESSION, HEAP, OBJECT];
+        my $data = $_[ARG0];
+
+        $self->send_results(['column1'], [['Hello World from a perl mysql DB !']]);
+    }
+
+    1;
+
+In those classes you have to redefine the resolver method in which you can resolve
+queries to events name (by returning the event name). Then you implement events as
+methods (with special POE stuff, check the samples).
+
+Make sure to resolve the system queries otherwise you won't be able to connect to 
+the server in the first place.
+
+Then you can use the send_results method (which is a wrapper around _send_definitions
+and _send_rows) to send data to the client.
+
+There are also a bunch of other methods to send empty resultsets or ok for queries 
+that don't return results.
 
 =head1 AUTHORS
 
@@ -300,12 +322,10 @@ Eriam Schaffter, C<eriam@cpan.org> and original work done by Philip Stoev in the
 
 =head1 COPYRIGHT
 
-This program is free software, you can redistribute it and/or modify it 
+This program is free software, you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
 =cut
 
 1;
-
-
 

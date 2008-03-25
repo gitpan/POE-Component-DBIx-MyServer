@@ -12,7 +12,29 @@ my $DBH;
 sub resolve_query {
     my ($self, $query) = @_;
 
+    if ($query =~ /columns_priv/ || $query =~ /db/) {
+        return 'proxy_do';
+    }
     return 'proxy_query';
+}
+
+sub proxy_do {
+    my ( $kernel, $session, $heap, $self ) = @_[ KERNEL, SESSION, HEAP, OBJECT];
+    my $data = $_[ARG0];
+
+    $self->_connect unless defined $DBH;
+
+    my $results;
+
+    eval {
+        $results = $DBH->do($data);
+
+        $self->send_ok;
+    };
+
+    if ($@) {
+        $self->send_error($@); 
+    }	
 }
 
 sub proxy_query {
@@ -56,9 +78,8 @@ sub _connect {
     my $dsn = "DBI:mysql:database=mysql;host=127.0.0.1;port=3306";
 
     $DBH = DBI->connect($dsn, $ENV{mysql_username}, $ENV{mysql_password});
-
-
 }
 
 
 1;
+
