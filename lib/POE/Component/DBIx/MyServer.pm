@@ -3,7 +3,7 @@ package POE::Component::DBIx::MyServer;
 use strict qw(subs vars refs);
 use warnings FATAL => 'all';
 
-our $VERSION = "0.01_05";
+our $VERSION = "0.01_06";
 
 use POE;
 use POE::Kernel;
@@ -83,10 +83,61 @@ sub spawn {
         Alias         => $alias,
         Started       => \&_server_start,
         Acceptor      => \&_accept_client,
-        SessionParams => [ heap => { query_handlers => $opt{'query_handlers'}  } ],
+        SessionParams => [
+            heap            => {
+                max_processes   => $opt{'max_processes'},
+            },
+            #inline_states   => {
+            #    fork    => \&fork,
+            #    test    => sub { print "TEST !!"; },
+            #},
+        ],
     );
 
 	return $self;
+}
+
+sub _server_start {
+    my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
+
+    print "Start server (".$session->ID.") \n";
+
+    print "About to fork .. \n";
+
+    $kernel->sig( CHLD => "got_sig_chld" );
+    $kernel->sig( INT  => "got_sig_int" );
+
+    $heap->{children}   = {};
+    $heap->{is_a_child} = 0;
+
+    warn "Server $$ has begun listening \n";
+
+    if ($heap->{max_processes})  {
+        my $current_children = keys %{ $heap->{children} };
+        for ( $current_children + 2 .. $heap->{max_processes} ) {
+
+            warn "Server $$ is attempting to fork.\n";
+
+            my $pid = fork();
+
+            unless ( defined($pid) ) {
+                warn( "Server $$ fork failed: $!\n");
+                return;
+            }
+
+            # Parent.  Add the child process to its list.
+            if ($pid) {
+                $heap->{children}->{$pid} = 1;
+                next;
+            }
+
+            # Child.  Clear the child process list.
+            warn "Server $$ forked successfully.\n";
+            $heap->{is_a_child} = 1;
+            $heap->{children}   = {};
+            return;
+        }
+    }
 }
 
 
@@ -211,12 +262,6 @@ sub _accept_client {
 }
 
 
-sub _server_start {
-   my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
-
-   print "Start server \n";
-}
-
 sub _length_encoder {
     return;
 }
@@ -307,13 +352,13 @@ In those classes you have to redefine the resolver method in which you can resol
 queries to events name (by returning the event name). Then you implement events as
 methods (with special POE stuff, check the samples).
 
-Make sure to resolve the system queries otherwise you won't be able to connect to 
+Make sure to resolve the system queries otherwise you won't be able to connect to
 the server in the first place.
 
 Then you can use the send_results method (which is a wrapper around _send_definitions
 and _send_rows) to send data to the client.
 
-There are also a bunch of other methods to send empty resultsets or ok for queries 
+There are also a bunch of other methods to send empty resultsets or ok for queries
 that don't return results.
 
 =head1 AUTHORS
@@ -328,4 +373,3 @@ under the same terms as Perl itself.
 =cut
 
 1;
-

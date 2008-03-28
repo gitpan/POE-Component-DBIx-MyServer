@@ -7,7 +7,7 @@ use warnings FATAL => 'all';
 use vars qw($VERSION @ISA);
 
 # Initialize our version
-$VERSION = '0.01_05';
+$VERSION = '0.01_06';
 
 use POE;
 use POE::Kernel;
@@ -351,6 +351,10 @@ sub handle_client_input {
 
         my $event;
 
+        use English;
+
+        print " query = $data in process $PID \n";
+
 #        $event = $self->resolve_sys_query($data);
 
         unless ($event) {
@@ -393,6 +397,9 @@ sub resolve_sys_query {
     }
     elsif ($query eq 'show tables') {
         return 'show_tables';
+    }
+    elsif ($query =~ /show table status/i) {
+        return 'show_table_status';
     }
     elsif ($query =~ /^use/ or $query =~ /^select database/i) {
         return 'select_db';
@@ -642,6 +649,12 @@ sub return_empty_set {
     my ( $kernel, $session, $heap, $self ) = @_[ KERNEL, SESSION, HEAP, OBJECT];
 
     $self->send_results(['empty_set'], [['']]);
+}
+
+sub show_table_status {
+    my ( $kernel, $session, $heap, $self ) = @_[ KERNEL, SESSION, HEAP, OBJECT];
+    print "";
+    $self->send_results(['Name', 'Engine', 'Version', 'Row_format', 'Rows', 'Avg_row_length', 'Data_length', 'Max_data_length', 'Index_length', 'Data_free', 'Auto_increment', 'Create_time', 'Update_time', 'Check_time', 'Collation', 'Checksum', 'Create_options', 'Comment'], [['Name', 'Engine', 'Version', 'Row_format', 'Rows', 'Avg_row_length', 'Data_length', 'Max_data_length', 'Index_length', 'Data_free', 'Auto_increment', 'Create_time', 'Update_time', 'Check_time', 'Collation', 'Checksum', 'Create_options', 'Comment']]);
 }
 
 sub return_ok {

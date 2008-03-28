@@ -16,6 +16,7 @@ WriteMakefile(
         'Module::Find'      => '0.06',
         'Class::Inspector'  => 0,
         'Module::Reload'    => 0,
+        'Catalyst'          => 0,
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean => { FILES    => 'POE-Component-*' },
