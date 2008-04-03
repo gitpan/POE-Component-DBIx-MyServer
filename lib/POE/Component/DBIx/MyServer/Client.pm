@@ -7,7 +7,7 @@ use warnings FATAL => 'all';
 use vars qw($VERSION @ISA);
 
 # Initialize our version
-$VERSION = '0.01_06';
+$VERSION = '0.01_07';
 
 use POE;
 use POE::Kernel;
@@ -15,6 +15,8 @@ use Module::Find;
 use Carp qw( croak );
 use Class::Accessor::Fast;
 use base 'Class::Accessor::Fast';
+
+use Time::HiRes qw(gettimeofday tv_interval);
 
 __PACKAGE__->mk_accessors(qw/
     username
@@ -35,6 +37,7 @@ __PACKAGE__->mk_accessors(qw/
     database
     server_class
     want_db_name
+    t0
 /);
 
 use Data::Dumper;
@@ -51,141 +54,129 @@ BEGIN {
 }
 
 
-use constant MYSERVER_PACKET_COUNT	=> 0;
-use constant MYSERVER_SOCKET		=> 1;
-use constant MYSERVER_DATABASE		=> 4;
-use constant MYSERVER_THREAD_ID		=> 5;
-use constant MYSERVER_SCRAMBLE		=> 6;
-use constant MYSERVER_DBH		=> 7;
-use constant MYSERVER_PARSER		=> 8;
-use constant MYSERVER_BANNER		=> 9;
-use constant MYSERVER_SERVER_CHARSET	=> 10;
-use constant MYSERVER_CLIENT_CHARSET	=> 11;
-use constant MYSERVER_SALT		=> 12;
-
-use constant FIELD_CATALOG		=> 0;
-use constant FIELD_DB			=> 1;
-use constant FIELD_TABLE		=> 2;
-use constant FIELD_ORG_TABLE		=> 3;
-use constant FIELD_NAME			=> 4;
-use constant FIELD_ORG_NAME		=> 5;
-use constant FIELD_LENGTH		=> 6;
-use constant FIELD_TYPE			=> 7;
-use constant FIELD_FLAGS		=> 8;
-use constant FIELD_DECIMALS		=> 9;
-use constant FIELD_DEFAULT		=> 10;
+use constant FIELD_CATALOG      => 0;
+use constant FIELD_DB           => 1;
+use constant FIELD_TABLE        => 2;
+use constant FIELD_ORG_TABLE    => 3;
+use constant FIELD_NAME         => 4;
+use constant FIELD_ORG_NAME     => 5;
+use constant FIELD_LENGTH       => 6;
+use constant FIELD_TYPE         => 7;
+use constant FIELD_FLAGS        => 8;
+use constant FIELD_DECIMALS     => 9;
+use constant FIELD_DEFAULT      => 10;
 
 
 #
 # This comes from include/mysql_com.h of the MySQL source
 #
 
-use constant CLIENT_LONG_PASSWORD	=> 1;
-use constant CLIENT_FOUND_ROWS		=> 2;
-use constant CLIENT_LONG_FLAG		=> 4;
-use constant CLIENT_CONNECT_WITH_DB	=> 8;
-use constant CLIENT_NO_SCHEMA		=> 16;
-use constant CLIENT_COMPRESS		=> 32;		# Must implement that one
-use constant CLIENT_ODBC		=> 64;
-use constant CLIENT_LOCAL_FILES		=> 128;
-use constant CLIENT_IGNORE_SPACE	=> 256;
-use constant CLIENT_PROTOCOL_41		=> 512;
-use constant CLIENT_INTERACTIVE		=> 1024;
-use constant CLIENT_SSL			=> 2048;	# Must implement that one
-use constant CLIENT_IGNORE_SIGPIPE	=> 4096;
-use constant CLIENT_TRANSACTIONS	=> 8192;
-use constant CLIENT_RESERVED 		=> 16384;
-use constant CLIENT_SECURE_CONNECTION	=> 32768;
-use constant CLIENT_MULTI_STATEMENTS	=> 1 << 16;
-use constant CLIENT_MULTI_RESULTS	=> 1 << 17;
-use constant CLIENT_SSL_VERIFY_SERVER_CERT	=> 1 << 30;
-use constant CLIENT_REMEMBER_OPTIONS		=> 1 << 31;
+use constant CLIENT_LONG_PASSWORD           => 1;
+use constant CLIENT_FOUND_ROWS              => 2;
+use constant CLIENT_LONG_FLAG               => 4;
+use constant CLIENT_CONNECT_WITH_DB         => 8;
+use constant CLIENT_NO_SCHEMA               => 16;
+use constant CLIENT_COMPRESS                => 32;		# Must implement that one
+use constant CLIENT_ODBC                    => 64;
+use constant CLIENT_LOCAL_FILES             => 128;
+use constant CLIENT_IGNORE_SPACE            => 256;
+use constant CLIENT_PROTOCOL_41             => 512;
+use constant CLIENT_INTERACTIVE             => 1024;
+use constant CLIENT_SSL                     => 2048;	# Must implement that one
+use constant CLIENT_IGNORE_SIGPIPE          => 4096;
+use constant CLIENT_TRANSACTIONS            => 8192;
+use constant CLIENT_RESERVED                => 16384;
+use constant CLIENT_SECURE_CONNECTION       => 32768;
+use constant CLIENT_MULTI_STATEMENTS        => 1 << 16;
+use constant CLIENT_MULTI_RESULTS           => 1 << 17;
+use constant CLIENT_SSL_VERIFY_SERVER_CERT  => 1 << 30;
+use constant CLIENT_REMEMBER_OPTIONS        => 1 << 31;
 
-use constant SERVER_STATUS_IN_TRANS		=> 1;
-use constant SERVER_STATUS_AUTOCOMMIT		=> 2;
-use constant SERVER_MORE_RESULTS_EXISTS		=> 8;
-use constant SERVER_QUERY_NO_GOOD_INDEX_USED	=> 16;
-use constant SERVER_QUERY_NO_INDEX_USED		=> 32;
-use constant SERVER_STATUS_CURSOR_EXISTS	=> 64;
-use constant SERVER_STATUS_LAST_ROW_SENT	=> 128;
-use constant SERVER_STATUS_DB_DROPPED		=> 256;
+use constant SERVER_STATUS_IN_TRANS             => 1;
+use constant SERVER_STATUS_AUTOCOMMIT           => 2;
+use constant SERVER_MORE_RESULTS_EXISTS         => 8;
+use constant SERVER_QUERY_NO_GOOD_INDEX_USED    => 16;
+use constant SERVER_QUERY_NO_INDEX_USED         => 32;
+use constant SERVER_STATUS_CURSOR_EXISTS        => 64;
+use constant SERVER_STATUS_LAST_ROW_SENT        => 128;
+use constant SERVER_STATUS_DB_DROPPED           => 256;
 use constant SERVER_STATUS_NO_BACKSLASH_ESCAPES => 512;
 
-use constant COM_SLEEP			=> 0;
-use constant COM_QUIT			=> 1;
-use constant COM_INIT_DB		=> 2;
-use constant COM_QUERY			=> 3;
-use constant COM_FIELD_LIST		=> 4;
-use constant COM_CREATE_DB		=> 5;
-use constant COM_DROP_DB		=> 6;
-use constant COM_REFRESH		=> 7;
-use constant COM_SHUTDOWN		=> 8;
-use constant COM_STATISTICS		=> 9;
-use constant COM_PROCESS_INFO		=> 10;
-use constant COM_CONNECT		=> 11;
-use constant COM_PROCESS_KILL		=> 12;
-use constant COM_DEBUG			=> 13;
-use constant COM_PING			=> 14;
-use constant COM_TIME			=> 15;
-use constant COM_DELAYED_INSERT		=> 16;
-use constant COM_CHANGE_USER		=> 17;
-use constant COM_BINLOG_DUMP		=> 18;
-use constant COM_TABLE_DUMP		=> 19;
-use constant COM_CONNECT_OUT		=> 20;
-use constant COM_REGISTER_SLAVE		=> 21;
-use constant COM_STMT_PREPARE		=> 22;
-use constant COM_STMT_EXECUTE		=> 23;
-use constant COM_STMT_SEND_LONG_DATA	=> 24;
-use constant COM_STMT_CLOSE		=> 25;
-use constant COM_STMT_RESET		=> 26;
-use constant COM_SET_OPTION		=> 27;
-use constant COM_STMT_FETCH		=> 28;
-use constant COM_END			=> 29;
+use constant COM_SLEEP                  => 0;
+use constant COM_QUIT                   => 1;
+use constant COM_INIT_DB                => 2;
+use constant COM_QUERY                  => 3;
+use constant COM_FIELD_LIST             => 4;
+use constant COM_CREATE_DB              => 5;
+use constant COM_DROP_DB                => 6;
+use constant COM_REFRESH                => 7;
+use constant COM_SHUTDOWN               => 8;
+use constant COM_STATISTICS             => 9;
+use constant COM_PROCESS_INFO           => 10;
+use constant COM_CONNECT                => 11;
+use constant COM_PROCESS_KILL           => 12;
+use constant COM_DEBUG                  => 13;
+use constant COM_PING                   => 14;
+use constant COM_TIME                   => 15;
+use constant COM_DELAYED_INSERT         => 16;
+use constant COM_CHANGE_USER            => 17;
+use constant COM_BINLOG_DUMP            => 18;
+use constant COM_TABLE_DUMP             => 19;
+use constant COM_CONNECT_OUT            => 20;
+use constant COM_REGISTER_SLAVE         => 21;
+use constant COM_STMT_PREPARE           => 22;
+use constant COM_STMT_EXECUTE           => 23;
+use constant COM_STMT_SEND_LONG_DATA    => 24;
+use constant COM_STMT_CLOSE             => 25;
+use constant COM_STMT_RESET             => 26;
+use constant COM_SET_OPTION             => 27;
+use constant COM_STMT_FETCH             => 28;
+use constant COM_END                    => 29;
 
 # This is taken from include/mysql_com.h
 
-use constant MYSQL_TYPE_DECIMAL		=> 0;
-use constant MYSQL_TYPE_TINY		=> 1;
-use constant MYSQL_TYPE_SHORT		=> 2;
-use constant MYSQL_TYPE_LONG		=> 3;
-use constant MYSQL_TYPE_FLOAT		=> 4;
-use constant MYSQL_TYPE_DOUBLE		=> 5;
-use constant MYSQL_TYPE_NULL		=> 6;
-use constant MYSQL_TYPE_TIMESTAMP	=> 7;
-use constant MYSQL_TYPE_LONGLONG	=> 8;
-use constant MYSQL_TYPE_INT24		=> 9;
-use constant MYSQL_TYPE_DATE		=> 10;
-use constant MYSQL_TYPE_TIME		=> 11;
-use constant MYSQL_TYPE_DATETIME	=> 12;
-use constant MYSQL_TYPE_YEAR		=> 13;
-use constant MYSQL_TYPE_NEWDATE		=> 14;
-use constant MYSQL_TYPE_VARCHAR		=> 15;
-use constant MYSQL_TYPE_BIT		=> 16;
-use constant MYSQL_TYPE_NEWDECIMAL	=> 246;
-use constant MYSQL_TYPE_ENUM		=> 247;
-use constant MYSQL_TYPE_SET		=> 248;
+use constant MYSQL_TYPE_DECIMAL     => 0;
+use constant MYSQL_TYPE_TINY        => 1;
+use constant MYSQL_TYPE_SHORT       => 2;
+use constant MYSQL_TYPE_LONG        => 3;
+use constant MYSQL_TYPE_FLOAT       => 4;
+use constant MYSQL_TYPE_DOUBLE      => 5;
+use constant MYSQL_TYPE_NULL        => 6;
+use constant MYSQL_TYPE_TIMESTAMP   => 7;
+use constant MYSQL_TYPE_LONGLONG    => 8;
+use constant MYSQL_TYPE_INT24       => 9;
+use constant MYSQL_TYPE_DATE        => 10;
+use constant MYSQL_TYPE_TIME        => 11;
+use constant MYSQL_TYPE_DATETIME    => 12;
+use constant MYSQL_TYPE_YEAR        => 13;
+use constant MYSQL_TYPE_NEWDATE     => 14;
+use constant MYSQL_TYPE_VARCHAR     => 15;
+use constant MYSQL_TYPE_BIT         => 16;
+use constant MYSQL_TYPE_NEWDECIMAL  => 246;
+use constant MYSQL_TYPE_ENUM        => 247;
+use constant MYSQL_TYPE_SET         => 248;
 use constant MYSQL_TYPE_TINY_BLOB	=> 249;
-use constant MYSQL_TYPE_MEDIUM_BLOB	=> 250;
-use constant MYSQL_TYPE_LONG_BLOB	=> 251;
-use constant MYSQL_TYPE_BLOB		=> 252;
-use constant MYSQL_TYPE_VAR_STRING	=> 253;
-use constant MYSQL_TYPE_STRING		=> 254;
-use constant MYSQL_TYPE_GEOMETRY	=> 255;
+use constant MYSQL_TYPE_MEDIUM_BLOB => 250;
+use constant MYSQL_TYPE_LONG_BLOB   => 251;
+use constant MYSQL_TYPE_BLOB        => 252;
+use constant MYSQL_TYPE_VAR_STRING  => 253;
+use constant MYSQL_TYPE_STRING      => 254;
+use constant MYSQL_TYPE_GEOMETRY    => 255;
 
-use constant NOT_NULL_FLAG		=> 1;
-use constant PRI_KEY_FLAG		=> 2;
-use constant UNIQUE_KEY_FLAG		=> 4;
-use constant MULTIPLE_KEY_FLAG		=> 8;
-use constant BLOB_FLAG			=> 16;
-use constant UNSIGNED_FLAG		=> 32;
-use constant ZEROFILL_FLAG		=> 64;
-use constant BINARY_FLAG		=> 128;
-use constant ENUM_FLAG			=> 256;
-use constant AUTO_INCREMENT_FLAG	=> 512;
-use constant TIMESTAMP_FLAG		=> 1024;
-use constant SET_FLAG			=> 2048;
-use constant NO_DEFAULT_VALUE_FLAG	=> 4096;
-use constant NUM_FLAG			=> 32768;
+use constant NOT_NULL_FLAG          => 1;
+use constant PRI_KEY_FLAG           => 2;
+use constant UNIQUE_KEY_FLAG        => 4;
+use constant MULTIPLE_KEY_FLAG      => 8;
+use constant BLOB_FLAG              => 16;
+use constant UNSIGNED_FLAG          => 32;
+use constant ZEROFILL_FLAG          => 64;
+use constant BINARY_FLAG            => 128;
+use constant ENUM_FLAG              => 256;
+use constant AUTO_INCREMENT_FLAG    => 512;
+use constant TIMESTAMP_FLAG         => 1024;
+use constant SET_FLAG               => 2048;
+use constant NO_DEFAULT_VALUE_FLAG  => 4096;
+use constant NUM_FLAG               => 32768;
 
 sub new {
     my $class = shift;
@@ -244,17 +235,7 @@ sub _authenticate {
 
     };
 
-#    if ($@) {
-#        die $@;
-#    }
-
-
-
     if ($database) {
-
-
-#        print $self->username;
-#        print ' ~~ '.$self->database."\n";
 
         my $module = $self->server_class;
 
@@ -326,8 +307,6 @@ sub isa {
                 $self->session->_register_state($method, $self);
             }
         }
-
-
     }
 
     return @ISA;
@@ -337,10 +316,18 @@ sub handle_client_input {
     my ( $kernel, $session, $heap, $self ) = @_[ KERNEL, SESSION, HEAP, OBJECT];
     my $data = $_[ARG0];
 
+    $self->t0([gettimeofday]);
+    print "_build_rows 0 = ".tv_interval($self->t0, [gettimeofday])." \n";
+
+    #$self->t0([gettimeofday]) if $self->t0 == 0;
+    #print "handle_client_input = ".tv_interval($self->t0, [gettimeofday])." \n";
+
     if (length($data) > 1) {
         $self->packet_count($self->packet_count + 1);
     }
-	return undef if length($data) <= 1;
+    else {
+        return;
+    }
 
     unless ( $self->authenticated) {
         $self->_authenticate($data);
@@ -351,32 +338,24 @@ sub handle_client_input {
 
         my $event;
 
-        use English;
-
-        print " query = $data in process $PID \n";
-
-#        $event = $self->resolve_sys_query($data);
-
-        unless ($event) {
-
-            eval {
-                $event = $self->resolve_query($data);
-            };
-
-            if ($@) {
-                $event = $self->resolve_sys_query($data);
-            }
-
-            if ($self->want_db_name && Class::Inspector->installed($self->server_class."::".$data)) {
-                $event = 'select_db';
-            }
+        eval {
+            $event = $self->resolve_query($data);
         };
+
+        if ($@) {
+            $event = $self->resolve_sys_query($data);
+        }
+
+        if ($self->want_db_name && Class::Inspector->installed($self->server_class."::".$data)) {
+            $event = 'select_db';
+        }
 
         POE::Kernel->post(
             $self->session_id,
             $event,
             $data
         );
+
    }
 }
 
@@ -408,23 +387,62 @@ sub resolve_sys_query {
     return undef;
 }
 
-
 sub _send_definitions {
     my ($self, $definitions, $skip_envelope) = @_;
 
 	if (not defined $skip_envelope) {
-        $self->write($self->_lengthCodedBinary((scalar(@{$definitions}))));
+        my $packet = $self->_lengthCodedBinary(scalar(@{$definitions}));
+        $self->write($packet);
 	}
 
 	my $last_send_result;
 
 	foreach my $definition (@{$definitions}) {
-        $definition = new_definition(name => $definition) unless ref($definition) eq 'DBIx::MyServer::Definition';
+        $definition = new_definition(name => $definition)
+            unless ref($definition) eq 'DBIx::MyServer::Definition'
+            or ref($definition) eq 'POE::Component::DBIx::MyServer::Definition';
         $self->send_definition($definition);
-	};
+	}
 
     if (not defined $skip_envelope) {
         $self->send_definitions_eof();
+	}
+    else {
+		return $last_send_result;
+	}
+}
+
+sub _build_definitions {
+    my ($self, $definitions, $skip_envelope) = @_;
+
+    my $header;
+    my $definitions_packet;
+
+	if (not defined $skip_envelope) {
+        my $packet = $self->_lengthCodedBinary(scalar(@{$definitions}));
+
+        $definitions_packet = $self->_add_header($packet);
+	}
+
+	my $last_send_result;
+
+	foreach my $definition (@{$definitions}) {
+        $definition = new_definition(name => $definition)
+            unless ref($definition) eq 'DBIx::MyServer::Definition'
+            or ref($definition) eq 'POE::Component::DBIx::MyServer::Definition';
+
+        $definitions_packet .= $self->_add_header(
+            $self->definition_packet($definition)
+        );
+	}
+
+    if (not defined $skip_envelope) {
+
+        $definitions_packet .= $self->_add_header(
+            $self->_build_eof
+        );
+
+        return $definitions_packet;
 	}
     else {
 		return $last_send_result;
@@ -473,11 +491,59 @@ sub send_definition {
 	$payload .= defined $field_flags ? pack('v', $field_flags) : pack('v', 0);
 	$payload .= defined $field_decimals ? chr($field_decimals) : pack('v','0');
 	$payload .= pack('v', 0);		# Filler
-	$payload .= $self->_lengthCodedString($field_default);
+    $payload .= $self->_lengthCodedString($field_default);
 
-   $self->write($payload);
+    $self->write($payload);
 }
 
+sub definition_packet {
+    my ($self, $definition) = @_;
+
+	my (
+		$field_catalog, $field_db, $field_table,
+		$field_org_table, $field_name, $field_org_name,
+		$field_length, $field_type, $field_flags,
+		$field_decimals, $field_default
+	) = (
+		$definition->[FIELD_CATALOG], $definition->[FIELD_DB],
+		$definition->[FIELD_TABLE], $definition->[FIELD_ORG_TABLE],
+		$definition->[FIELD_NAME], $definition->[FIELD_ORG_NAME],
+		$definition->[FIELD_LENGTH], $definition->[FIELD_TYPE],
+		$definition->[FIELD_FLAGS], $definition->[FIELD_DECIMALS],
+		$definition->[FIELD_DEFAULT]
+	);
+
+	my $payload = join('', map { $self->_lengthCodedString($_) } (
+		$field_catalog, $field_db, $field_table,
+		$field_org_table, $field_name, $field_org_name
+	));
+
+	$payload .= chr(0x0c);	# Filler
+	$payload .= pack('v', 11);		# US ASCII
+	$payload .= pack('V', $field_length);
+	$payload .= chr($field_type);
+	$payload .= defined $field_flags ? pack('v', $field_flags) : pack('v', 0);
+	$payload .= defined $field_decimals ? chr($field_decimals) : pack('v','0');
+	$payload .= pack('v', 0);		# Filler
+    $payload .= $self->_lengthCodedString($field_default);
+
+   return $payload;
+}
+
+sub _build_eof {
+    my ($self, $warning_count, $server_status) = @_;
+
+	my $payload;
+
+	$warning_count = 0 unless $warning_count;
+	$server_status = SERVER_STATUS_AUTOCOMMIT unless $server_status;
+
+	$payload = chr(0xfe);
+	$payload .= pack('v', $warning_count);
+	$payload .= pack('v', $server_status);
+
+   return $payload;
+}
 
 sub send_eof {
     my ($self, $warning_count, $server_status) = @_;
@@ -512,7 +578,8 @@ sub send_ok {
     $self->write( $data, 1);
 }
 
-sub write {
+
+sub _add_header {
     my ($self, $message, $reinit) = @_;
 
     my $header;
@@ -526,14 +593,22 @@ sub write {
         $self->packet_count($self->packet_count + 1);
     }
 
-    $self->wheel->put($header.$message);
+    return $header.$message;
+}
+
+sub write {
+    my ($self, $message, $reinit) = @_;
+
+    $message = $self->_add_header($message, $reinit);
+
+    $self->wheel->put($message);
 }
 
 
 sub _lengthCodedString {
 	my ($self, $string) = @_;
-	return chr(0) if (not defined $string);
-	return chr(253).substr(pack('V',length($string)),0,3).$string;
+	return chr(0) if (not defined $string or $string eq '');
+	return $self->_lengthCodedBinary(length($string)).$string;
 }
 
 sub _lengthCodedBinary {
@@ -575,8 +650,7 @@ sub handle_client_connect {
     $payload .= $self->banner;
     $payload .= pack('V', $self->tid);
     $payload .= substr($self->salt,0,8)."\0";
-#    $payload .= pack('v', CLIENT_LONG_PASSWORD | CLIENT_CONNECT_WITH_DB | CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
-    $payload .= pack('v', CLIENT_CONNECT_WITH_DB | CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
+    $payload .= pack('v', CLIENT_LONG_PASSWORD | CLIENT_CONNECT_WITH_DB | CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
     $payload .= $self->charset;
     $payload .= pack('v', SERVER_STATUS_AUTOCOMMIT);
     $payload .= "\0" x 13;
@@ -632,17 +706,79 @@ sub _send_rows {
     $self->send_eof;
 }
 
+sub _build_rows {
+    my ($self, $rows) = @_;
+    return $self->_build_eof if not defined $rows;
+
+    my $rows_packet;
+    my $data_packet;
+
+    #print "_build_rows 0 = ".tv_interval($self->t0, [gettimeofday])." \n";
+
+	foreach my $row (@$rows) {
+
+        my $small_data;
+        if (ref($row) eq 'ARRAY') {
+            foreach (@$row) {
+                if (not defined $_) {
+                    $small_data .= chr(251);
+                }
+                else {
+                    $small_data .= $self->_lengthCodedString($_);
+                }
+            }
+        }
+        elsif (ref($row) eq 'HASH') {
+            foreach (values %{ $row }) {
+                if (not defined $_) {
+                    $small_data .= chr(251);
+                }
+                else {
+                    $small_data .= $self->_lengthCodedString($_);
+                }
+            }
+        }
+
+        if (defined $small_data) {
+            $data_packet .= $self->_add_header($small_data);
+        }
+	}
+
+    $data_packet .= $self->_add_header(
+        $self->_build_eof
+    );
+
+    return $data_packet;
+}
+
 sub send_results {
+    my ($self, $definitions, $data, $stream) = @_;
+
+    if (length(@{$data}) > 100 || $stream) {
+        $self->_send_definitions($definitions);
+        $self->_send_rows($data);
+    }
+    else {
+        $self->send_small_results($definitions, $data);
+    }
+
+}
+
+sub send_small_results {
     my ($self, $definitions, $data) = @_;
-    $self->_send_definitions($definitions);
-    $self->_send_rows($data);
+
+    my $definitions_packet = $self->_build_definitions($definitions);
+    my $data_packet = $self->_build_rows($data);
+
+    $self->wheel->put($definitions_packet.$data_packet);
+    $self->packet_count(0);
 }
 
 sub select_version {
     my ( $kernel, $session, $heap, $self ) = @_[ KERNEL, SESSION, HEAP, OBJECT];
     my $data = $_[ARG0];
 
-    $self->send_results(['version'], [[ 'on perl '.$] ]]);
+    $self->send_small_results(['version'], [[ 'on perl '.$] ]]);
 }
 
 sub return_empty_set {
@@ -765,7 +901,7 @@ sub show_databases {
 sub new_definition {
 	my %params = @_;
 
-	my $definition = bless([], 'DBIx::MyServer::Definition');
+	my $definition = bless([], 'POE::Component::DBIx::MyServer::Definition');
 	$definition->[FIELD_CATALOG] = $params{catalog};
 	$definition->[FIELD_DB] = $params{db} ? $params{db} : $params{database};
 	$definition->[FIELD_TABLE] = $params{table};
@@ -780,6 +916,25 @@ sub new_definition {
 	return $definition;
 }
 
+
+sub definition {
+    my $self = shift;
+	my %params = @_;
+
+	my $definition = bless([], 'POE::Component::DBIx::MyServer::Definition');
+	$definition->[FIELD_CATALOG] = $params{catalog} || 'def';
+	$definition->[FIELD_DB] = $params{db} ? $params{db} : $params{database};
+	$definition->[FIELD_TABLE] = $params{table};
+	$definition->[FIELD_ORG_TABLE] = $params{org_table};
+	$definition->[FIELD_NAME] = $params{name};
+	$definition->[FIELD_ORG_NAME] = $params{org_name};
+	$definition->[FIELD_LENGTH] = defined $params{length} ? $params{length} : 0;
+	$definition->[FIELD_TYPE] = defined $params{type} ? $params{type} : MYSQL_TYPE_STRING;
+	$definition->[FIELD_FLAGS] = defined $params{flags} ? $params{flags} : 0;
+	$definition->[FIELD_DECIMALS] = $params{decimals};
+	$definition->[FIELD_DEFAULT] = $params{default};
+	return $definition;
+}
 
 
 

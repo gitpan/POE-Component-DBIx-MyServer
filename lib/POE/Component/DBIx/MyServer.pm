@@ -1,9 +1,9 @@
 package POE::Component::DBIx::MyServer;
 
 use strict qw(subs vars refs);
-use warnings FATAL => 'all';
+use warnings;
 
-our $VERSION = "0.01_06";
+our $VERSION = "0.01_07";
 
 use POE;
 use POE::Kernel;
@@ -16,6 +16,8 @@ use Carp qw( croak );
 use Class::Inspector;
 use Module::Find;
 use Data::Dumper;
+
+use Time::HiRes qw( gettimeofday tv_interval);
 
 BEGIN {
 	if ( ! defined &DEBUG ) {
@@ -30,13 +32,11 @@ sub spawn {
 	$server_class = $class;
 	my ( $alias, $address, $port, $hostname, $got_query );
 
-	# Get the session alias
 	if ( exists $opt{'alias'} and defined $opt{'alias'} and length( $opt{'alias'} ) ) {
 		$alias = $opt{'alias'};
 		delete $opt{'alias'};
 	}
 
-	# Get the PORT
 	if ( exists $opt{'port'} and defined $opt{'port'} and length( $opt{'port'} ) ) {
 		$port = $opt{'port'};
 		delete $opt{'port'};
@@ -45,7 +45,6 @@ sub spawn {
 		croak( 'port is required to create a new POE::Component::Server::SimpleHTTP instance!' );
 	}
 
-	# Get the HOSTNAME
 	if ( exists $opt{'hostname'} and defined $opt{'hostname'} and length( $opt{'hostname'} ) ) {
 		$hostname = $opt{'hostname'};
 		delete $opt{'hostname'};
@@ -54,11 +53,9 @@ sub spawn {
 			print 'Using Sys::Hostname for hostname';
 		}
 
-		# Figure out the hostname
 		require Sys::Hostname;
 		$hostname = Sys::Hostname::hostname();
 
-		# Get rid of any lingering HOSTNAME
 		if ( exists $opt{'hostname'} ) {
 			delete $opt{'hostname'};
 		}
@@ -73,8 +70,6 @@ sub spawn {
     };
     my $self = bless $data, $class;
 
-#    print $alias."\n";
-
     my $acceptor_session_id = POE::Component::Server::TCP->new(
         Port          => $port,
         Address       => $address,
@@ -87,10 +82,6 @@ sub spawn {
             heap            => {
                 max_processes   => $opt{'max_processes'},
             },
-            #inline_states   => {
-            #    fork    => \&fork,
-            #    test    => sub { print "TEST !!"; },
-            #},
         ],
     );
 
@@ -100,19 +91,18 @@ sub spawn {
 sub _server_start {
     my ( $kernel, $session, $heap ) = @_[ KERNEL, SESSION, HEAP];
 
-    print "Start server (".$session->ID.") \n";
-
-    print "About to fork .. \n";
-
-    $kernel->sig( CHLD => "got_sig_chld" );
-    $kernel->sig( INT  => "got_sig_int" );
-
-    $heap->{children}   = {};
-    $heap->{is_a_child} = 0;
-
     warn "Server $$ has begun listening \n";
 
     if ($heap->{max_processes})  {
+
+        print "About to fork .. \n";
+
+        $kernel->sig( CHLD => "got_sig_chld" );
+        $kernel->sig( INT  => "got_sig_int" );
+
+        $heap->{children}   = {};
+        $heap->{is_a_child} = 0;
+
         my $current_children = keys %{ $heap->{children} };
         for ( $current_children + 2 .. $heap->{max_processes} ) {
 
@@ -153,6 +143,9 @@ sub _accept_client {
     });
 
     my $accept_session_id = POE::Session->create(
+        object_states => [
+            $client =>  { tcp_server_got_input => 'handle_client_input' }
+        ],
         inline_states => {
             _start => sub {
                 my ( $kernel, $session, $heap ) = @_[KERNEL, SESSION, HEAP];
@@ -177,6 +170,7 @@ sub _accept_client {
                     ),
                     InputEvent   => 'tcp_server_got_input',
                     ErrorEvent   => 'tcp_server_got_error',
+                    #AutoFlush    => 1,
                 );
                 $client->wheel($heap->{client});
                 $client->session_id($session->ID);
@@ -205,11 +199,11 @@ sub _accept_client {
             },
             _child  => sub { },
 
-            tcp_server_got_input => sub {
-              return if $_[HEAP]->{shutdown};
-              $_[KERNEL]->yield('handle_client_input', $_[ARG0]);
-              undef;
-            },
+            #tcp_server_got_input => sub {
+            #  return if $_[HEAP]->{shutdown};
+            #  $_[KERNEL]->yield('handle_client_input', $_[ARG0]);
+            #  undef;
+            #},
             tcp_server_got_error => sub {
               DEBUG and warn(
                 "$$:  child Error ARG0=$_[ARG0] ARG1=$_[ARG1]"
@@ -258,6 +252,8 @@ sub _accept_client {
 #          return;
 #        },
         },
+    #    options => {trace => 1,
+    #debug => 1,}
     );
 }
 

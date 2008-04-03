@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                POE-Component-DBIx-MyServer
-version:             0.01_06
+version:             0.01_07
 abstract:            A pseudo mysql POE server
 license:             perl
 author:              
